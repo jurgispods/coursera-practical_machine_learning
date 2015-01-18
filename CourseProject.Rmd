@@ -1,0 +1,174 @@
+---
+title: "PracticalMachineLearning_CourseProject"
+author: "Jurgis Pods"
+date: "8 Jan 2015"
+output: html_document
+---
+<!-- What about timestamps? Timestamps in absolute numbers are likely to result in overfitting to the training set, as the exact date and time at which the exercise was recorded does not give any hint on the type of the exercise. HOWEVER: Timestamps that are close together are VERY LIKELY to belong to the same exercise. So maybe one should include a preprocessed timestamp variable in the following way: 1) Center/standardize timestamps FOR EACH INDIVIDUAL SEPARATELY by either subtracting mean or start time. 2) Merge this timestamp with the individual factor variable such that the resulting variable is unique per individual (offset that guarantees non-overlapping values per individual)
+This might be overkill - and it might be considered cheating to use the timestamp at all, if we really want to use the accelerator values to determine the type and quality of the exercise... -->
+
+# Practical Machine Learning - Course Project Writeup
+## General Remarks
+
+A first look at the provided raw data shows that it really *is* raw: 
+- lots of missing / NA / "#DIV/0!" values
+- many, many columns with data coming from different sensors; this number should be reduced somehow
+- some columns are metadata columns like indices, timestamps and the like, which should not be used for prediciting
+
+Ideas:
+- Remove variables with nearly zero variance (determine those by nzv() function)
+- Remove columns containing NAs / "#DIV/0!", even though this removes some valid data points
+
+In the following, I will describe my approach on how to load and preprocess the data, divide it into training and testing datasets, train a suitable model and use this to predict the "classe" variable of the testing set and to estimate its accuracy.
+
+It should be noted that there are multiple ways to come to a result, so I will also try to explain why I made a certain decision, which may or may not be optimal.
+
+## Getting and cleaning the data
+
+### Reading in the data
+```{r, echo=FALSE}
+# Load caret package, which will be used for training the prediction model
+library(caret)
+# Set seed for reproducibility
+set.seed(123)
+
+# The local file name to the training data, change this on your machine
+fileName = "~/pml-training.csv"
+
+pml_data = read.csv(file=fileName,head=TRUE,sep=",", na.strings=c("NA","#DIV/0!",""))
+```
+The variable `pml_data` now contains the raw data. Note that I used a custom parameter `na.string` in order to treat missing values and the notorious Excel warning "#DIV/0!" as an NA entry, which has special meaning in R. This can be used later to remove all NA values in one go.
+
+### Create (raw) training and testing partition
+```{r}
+trainingIdx = createDataPartition(y=pml_data$classe, p=0.6,list=FALSE)
+raw_training = pml_data[trainingIdx,]
+raw_testing = pml_data[-trainingIdx,]
+dim(raw_training)
+dim(raw_testing)
+```
+As suggested in the lectures, I used a ratio of 60% for the training set.
+
+### Cleaning data and extracting features
+Let's have a look at the raw training data. As already stated above, it contains a lot of missing data. But there are also many uninformative variables (with zero or near-zero variance):
+
+```{r}
+# A lot of missing values here...
+#str(raw_training)
+
+# And a lot of uninformative variables as well:
+nzv_info = nzv(raw_training,saveMetrics = TRUE)
+nzv_vars = row.names(nzv_info[which(nzv_info$nzv == "TRUE"),])
+nzv_vars
+```
+
+These variables can be safely removed. The following procedure might be a bit inconvenient, but I did't find a nice one-liner to remove certain columns from a dataframe by name.
+```{r}
+# Remove those vars:
+varsToBeRemoved <- names(raw_training) %in% nzv_vars 
+# Number of removed vars
+length(which(varsToBeRemoved == "TRUE"))
+
+tidy_training <- raw_training[!varsToBeRemoved]  
+tidy_testing <- raw_testing[!varsToBeRemoved]
+
+# Paranoia check: make sure there are no near zero variance variables anymore in tidy set
+nzv(tidy_training,saveMetrics = TRUE)
+
+# Print size of reduced datasets
+dim(tidy_training)
+dim(tidy_testing)
+```
+
+Next, the metadata columns are removed. Actually, columns like timestamps might actually give some information for the classification (nearby timestamps probably correlate with the same exercise if it is carried out repeatedly), but I would consider this cheating. It might also lead to overfitting, so I decided to remove all indices / timestamps / other metadata columns.
+```{r}
+# Out-of-sample errors are not really different when using the first or second command instead of the third
+#remove_vars = c("X","cvtd_timestamp")
+#remove_vars = c("X", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp")
+remove_vars = c("X", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "num_window")
+varsToBeRemoved <- names(tidy_training) %in% remove_vars
+tidy_training = tidy_training[!varsToBeRemoved]
+tidy_testing = tidy_testing[!varsToBeRemoved]
+dim(tidy_training)
+dim(tidy_testing)
+```
+I did not remove the "user_name" factor variable. The reason is my suspection that different persons carry out the exercises differntly, so the information about the subject might be beneficial for the prediction model. 
+However, I am not sure if this can be called "cheating" if we actually want to predict the type of exercise based solely on sensor data, and not using any kind of meta data.
+
+Now we further reduce the datasets by removing all columns which contain missing values in any row. When looking at the raw dataset, it becomes clear that whenever there is missing a value in some row, it is missing in almost all of the other rows as well. Predicting with such "variables" is certainly not a good idea, so we remove those columns entirely.
+```{r}
+# Remove all columns containing NA entries 
+nan_idx = apply( tidy_training , 2 , function(x) any(is.na(x)) )
+tidy_testing = tidy_testing[, !nan_idx]
+tidy_training = tidy_training[, !nan_idx]
+dim(tidy_training)
+dim(tidy_testing)
+```
+
+One more idea was to convert factor to indicator variables. This did not seem to improve the model accuracy, so I did not use the following code in my final model.
+```{r}
+# Not sure if this is beneficial: convert "user_name" factor variable to indicator variables
+# user_name_idx = names(tidy_training) %in% c("user_name")
+# dummies = dummyVars(~ user_name, data = tidy_training)
+# temp_training = data.frame(predict(dummies, newdata=tidy_training))
+# tidy_training = data.frame(temp_training, tidy_training[,!user_name_idx])
+# dummies = dummyVars(~ user_name, data = tidy_testing)
+# temp_testing = data.frame(predict(dummies, newdata=tidy_testing))
+# tidy_testing = data.frame(temp_testing, tidy_testing[,!user_name_idx])  
+# dim(tidy_training)
+# dim(tidy_testing)
+```
+
+Now we are done with preprocessing, assign the cleaned up dataframes to the variable `training` and `testing`:
+```{r}
+# Superfluous variables FTW
+training = tidy_training
+testing = tidy_testing
+dim(training)
+dim(testing)
+```
+
+## Training the model
+After the (crucial) part of getting clean training and testing data, it is now time to decide for a model. Needless to say this is a critical decision. I tried different algorithms, e.g. `rpart`:
+```{r}
+# Load required packages
+library(rpart)
+library(rpart.plot)
+library(rattle)
+
+# Using rpart directly (first call) or via caret (second call)
+#fit_rpart = rpart(classe ~ ., data=training, method="class")
+fit_rpart <- train(classe ~ ., method="rpart", data=training)
+
+# Use model to predict classe for testing set using either the rpart model (first call) or the
+# model wrapped by caret (second call)
+#predict_rpart = predict(fit_rpart, newdata=testing, type="class")
+predict_rpart = predict(fit_rpart, newdata=testing)
+
+# Evaluate predictions by comparing with known classe values
+cm_rpart = confusionMatrix(predict_rpart, testing$classe)
+cm_rpart
+```
+The overall accuracy of this model is `r cm_rpart$overall[1] * 100`%. Not too bad, but it could be better.
+
+I obtained the best results with a random forest model, which is also mentioned frequently in the lectures as one of the best methods in Kaggle contests:
+```{r}
+
+## Random forests
+library(randomForest)
+# This call directly to randomForest gives very good results:
+#fit_rforest = randomForest(classe ~ ., data=training, method="class")
+# When using this train command from caret, it takes ages because of the default values of trControl and tuneLength
+#fit_rforest = train(classe ~ ., data=training, method="rf")
+# Faster version of the above command which is more or less equivalent to the first randomForest command; the do.trace flag results in verbose output
+fit_rforest = train(classe~., data=training, method="rf", trControl=trainControl(method="none",number=1,repeats=0), tuneLength=1, do.trace=T)
+
+# Use model to predict classe for testing set
+#predict_rforest = predict(fit_rforest, newdata=testing, type="class")
+predict_rforest = predict(fit_rforest, newdata=testing)
+
+# Evaluate predictions by comparing with known classe values
+cm_rforest = confusionMatrix(predict_rforest, testing$classe)
+cm_rforest
+```
+This model gives an extremely good out-of-sample accuracy of `r cm_rforest$overall[1] * 100`%.
