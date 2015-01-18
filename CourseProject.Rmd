@@ -24,7 +24,6 @@ In the following, I will describe my approach on how to load and preprocess the 
 It should be noted that there are multiple ways to come to a result, so I will also try to explain why I made a certain decision, which may or may not be optimal.
 
 ## Getting and cleaning the data
-
 ### Reading in the data
 ```{r, echo=FALSE}
 # Load caret package, which will be used for training the prediction model
@@ -34,8 +33,11 @@ set.seed(123)
 
 # The local file name to the training data, change this on your machine
 fileName = "~/pml-training.csv"
-
+#fileName = "data/pml-training.csv"
 pml_data = read.csv(file=fileName,head=TRUE,sep=",", na.strings=c("NA","#DIV/0!",""))
+fileName = "~/pml-testing.csv"
+#fileName = "data/pml-testing.csv"
+raw_validation = read.csv(file=fileName,head=TRUE,sep=",", na.strings=c("NA","#DIV/0!",""))
 ```
 The variable `pml_data` now contains the raw data. Note that I used a custom parameter `na.string` in order to treat missing values and the notorious Excel warning "#DIV/0!" as an NA entry, which has special meaning in R. This can be used later to remove all NA values in one go.
 
@@ -71,6 +73,7 @@ length(which(varsToBeRemoved == "TRUE"))
 
 tidy_training <- raw_training[!varsToBeRemoved]  
 tidy_testing <- raw_testing[!varsToBeRemoved]
+tidy_validation <- raw_validation[!varsToBeRemoved]
 
 # Paranoia check: make sure there are no near zero variance variables anymore in tidy set
 nzv(tidy_training,saveMetrics = TRUE)
@@ -89,6 +92,7 @@ remove_vars = c("X", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_times
 varsToBeRemoved <- names(tidy_training) %in% remove_vars
 tidy_training = tidy_training[!varsToBeRemoved]
 tidy_testing = tidy_testing[!varsToBeRemoved]
+tidy_validation <- tidy_validation[!varsToBeRemoved]
 dim(tidy_training)
 dim(tidy_testing)
 ```
@@ -101,6 +105,7 @@ Now we further reduce the datasets by removing all columns which contain missing
 nan_idx = apply( tidy_training , 2 , function(x) any(is.na(x)) )
 tidy_testing = tidy_testing[, !nan_idx]
 tidy_training = tidy_training[, !nan_idx]
+tidy_validation = tidy_validation[, !nan_idx]
 dim(tidy_training)
 dim(tidy_testing)
 ```
@@ -114,7 +119,9 @@ One more idea was to convert factor to indicator variables. This did not seem to
 # tidy_training = data.frame(temp_training, tidy_training[,!user_name_idx])
 # dummies = dummyVars(~ user_name, data = tidy_testing)
 # temp_testing = data.frame(predict(dummies, newdata=tidy_testing))
-# tidy_testing = data.frame(temp_testing, tidy_testing[,!user_name_idx])  
+# tidy_testing = data.frame(temp_testing, tidy_testing[,!user_name_idx])
+# temp_validation = data.frame(predict(dummies, newdata=tidy_validation))
+# tidy_validation = data.frame(temp_validation, tidy_validation[,!user_name_idx])  
 # dim(tidy_training)
 # dim(tidy_testing)
 ```
@@ -124,6 +131,7 @@ Now we are done with preprocessing, assign the cleaned up dataframes to the vari
 # Superfluous variables FTW
 training = tidy_training
 testing = tidy_testing
+validation = tidy_validation
 dim(training)
 dim(testing)
 ```
@@ -149,7 +157,7 @@ predict_rpart = predict(fit_rpart, newdata=testing)
 cm_rpart = confusionMatrix(predict_rpart, testing$classe)
 cm_rpart
 ```
-The overall accuracy of this model is `r cm_rpart$overall[1] * 100`%. Not too bad, but it could be better.
+The overall accuracy of this model is `r cm_rpart$overall[1] * 100`%, which is really bad.
 
 I obtained the best results with a random forest model, which is also mentioned frequently in the lectures as one of the best methods in Kaggle contests:
 ```{r}
@@ -172,3 +180,23 @@ cm_rforest = confusionMatrix(predict_rforest, testing$classe)
 cm_rforest
 ```
 This model gives an extremely good out-of-sample accuracy of `r cm_rforest$overall[1] * 100`%.
+
+## Predictions on unknown data
+Note that loading and preprocessing of the validation data has already been carried out simultaneously with the training/testing datasets. Predicting is straightforward:
+```{r}
+predict_validation = predict(fit_rforest, newdata=validation)
+predict_validation
+```
+
+Now the provided function can be used to write out the predictions, one file for each result.
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predict_validation)
+```
