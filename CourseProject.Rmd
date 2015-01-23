@@ -1,5 +1,5 @@
 ---
-title: "PracticalMachineLearning_CourseProject"
+title: "Practical Machine Learning - Course Project"
 author: "Jurgis Pods"
 date: "8 Jan 2015"
 output: html_document
@@ -7,15 +7,16 @@ output: html_document
 <!-- What about timestamps? Timestamps in absolute numbers are likely to result in overfitting to the training set, as the exact date and time at which the exercise was recorded does not give any hint on the type of the exercise. HOWEVER: Timestamps that are close together are VERY LIKELY to belong to the same exercise. So maybe one should include a preprocessed timestamp variable in the following way: 1) Center/standardize timestamps FOR EACH INDIVIDUAL SEPARATELY by either subtracting mean or start time. 2) Merge this timestamp with the individual factor variable such that the resulting variable is unique per individual (offset that guarantees non-overlapping values per individual)
 This might be overkill - and it might be considered cheating to use the timestamp at all, if we really want to use the accelerator values to determine the type and quality of the exercise... -->
 
-# Practical Machine Learning - Course Project Writeup
-## General Remarks
+# General Remarks
 
-A first look at the provided raw data shows that it really *is* raw: 
+A first look at the provided raw data shows that it really *is* raw:
+
 - lots of missing / NA / "#DIV/0!" values
 - many, many columns with data coming from different sensors; this number should be reduced somehow
 - some columns are metadata columns like indices, timestamps and the like, which should not be used for prediciting
 
 Ideas:
+
 - Remove variables with nearly zero variance (determine those by nzv() function)
 - Remove columns containing NAs / "#DIV/0!", even though this removes some valid data points
 
@@ -23,25 +24,25 @@ In the following, I will describe my approach on how to load and preprocess the 
 
 It should be noted that there are multiple ways to come to a result, so I will also try to explain why I made a certain decision, which may or may not be optimal.
 
-## Getting and cleaning the data
-### Reading in the data
-```{r, echo=FALSE}
+# Getting and cleaning the data
+## Reading in the data
+```{r}
 # Load caret package, which will be used for training the prediction model
 library(caret)
 # Set seed for reproducibility
 set.seed(123)
 
 # The local file name to the training data, change this on your machine
-fileName = "~/pml-training.csv"
-#fileName = "data/pml-training.csv"
+#fileName = "~/pml-training.csv"
+fileName = "data/pml-training.csv"
 pml_data = read.csv(file=fileName,head=TRUE,sep=",", na.strings=c("NA","#DIV/0!",""))
-fileName = "~/pml-testing.csv"
-#fileName = "data/pml-testing.csv"
+#fileName = "~/pml-testing.csv"
+fileName = "data/pml-testing.csv"
 raw_validation = read.csv(file=fileName,head=TRUE,sep=",", na.strings=c("NA","#DIV/0!",""))
 ```
 The variable `pml_data` now contains the raw data. Note that I used a custom parameter `na.string` in order to treat missing values and the notorious Excel warning "#DIV/0!" as an NA entry, which has special meaning in R. This can be used later to remove all NA values in one go.
 
-### Create (raw) training and testing partition
+## Create (raw) training and testing partition
 ```{r}
 trainingIdx = createDataPartition(y=pml_data$classe, p=0.6,list=FALSE)
 raw_training = pml_data[trainingIdx,]
@@ -51,7 +52,7 @@ dim(raw_testing)
 ```
 As suggested in the lectures, I used a ratio of 60% for the training set.
 
-### Cleaning data and extracting features
+## Cleaning data and extracting features
 Let's have a look at the raw training data. As already stated above, it contains a lot of missing data. But there are also many uninformative variables (with zero or near-zero variance):
 
 ```{r}
@@ -76,7 +77,9 @@ tidy_testing <- raw_testing[!varsToBeRemoved]
 tidy_validation <- raw_validation[!varsToBeRemoved]
 
 # Paranoia check: make sure there are no near zero variance variables anymore in tidy set
-nzv(tidy_training,saveMetrics = TRUE)
+nzv_info = nzv(tidy_training,saveMetrics = TRUE)
+# This does not output anything, good!
+nzv_vars = row.names(nzv_info[which(nzv_info$nzv == "TRUE"),])
 
 # Print size of reduced datasets
 dim(tidy_training)
@@ -88,7 +91,8 @@ Next, the metadata columns are removed. Actually, columns like timestamps might 
 # Out-of-sample errors are not really different when using the first or second command instead of the third
 #remove_vars = c("X","cvtd_timestamp")
 #remove_vars = c("X", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp")
-remove_vars = c("X", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "num_window")
+#remove_vars = c("X", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "num_window")
+remove_vars = c("user_name", "X", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "num_window")
 varsToBeRemoved <- names(tidy_training) %in% remove_vars
 tidy_training = tidy_training[!varsToBeRemoved]
 tidy_testing = tidy_testing[!varsToBeRemoved]
@@ -96,10 +100,8 @@ tidy_validation <- tidy_validation[!varsToBeRemoved]
 dim(tidy_training)
 dim(tidy_testing)
 ```
-I did not remove the "user_name" factor variable. The reason is my suspection that different persons carry out the exercises differntly, so the information about the subject might be beneficial for the prediction model. 
-However, I am not sure if this can be called "cheating" if we actually want to predict the type of exercise based solely on sensor data, and not using any kind of meta data.
 
-Now we further reduce the datasets by removing all columns which contain missing values in any row. When looking at the raw dataset, it becomes clear that whenever there is missing a value in some row, it is missing in almost all of the other rows as well. Predicting with such "variables" is certainly not a good idea, so we remove those columns entirely.
+Now we further reduce the datasets by removing all columns which contain missing values in any row. When looking at the raw dataset, it becomes clear that whenever there is missing a value in some row, it is missing in almost all of the other rows as well. Predicting with such sparsely observed variables is certainly not a good idea, so we remove those columns entirely.
 ```{r}
 # Remove all columns containing NA entries 
 nan_idx = apply( tidy_training , 2 , function(x) any(is.na(x)) )
@@ -134,15 +136,27 @@ testing = tidy_testing
 validation = tidy_validation
 dim(training)
 dim(testing)
+dim(validation)
 ```
 
-## Training the model
-After the (crucial) part of getting clean training and testing data, it is now time to decide for a model. Needless to say this is a critical decision. I tried different algorithms, e.g. `rpart`:
+# Exploratory Analysis
+As a next step, I should have started doing some exploratory analyes on the training set. There were, however, a few reasons why I did not end up doing so:
+
+- I am taking the Exploratory Data Analysis in parallel (and a little delayed) to this one, so I did not have all the tools available for this task.
+- Cleaning the data was a very time-consuming task, so I did not find much time "playing around" with the data; I wanted to start with a first model to at least have something to submit before the deadline.
+- One of the first models I tried (random forests) turned out to yield such a good accuracy that I did not feel the need to refine my model or to further reduce my feature space.
+
+# Training the model
+After the (crucial) part of getting clean training and testing data, it is now time to decide for a model. Needless to say this is a critical decision. 
+
+## rpart
+I tried two different algorithms, the first was `rpart` (Recursive Partitioning and Regression Trees):
 ```{r}
 # Load required packages
 library(rpart)
 library(rpart.plot)
 library(rattle)
+library(e1071)
 
 # Using rpart directly (first call) or via caret (second call)
 #fit_rpart = rpart(classe ~ ., data=training, method="class")
@@ -157,9 +171,10 @@ predict_rpart = predict(fit_rpart, newdata=testing)
 cm_rpart = confusionMatrix(predict_rpart, testing$classe)
 cm_rpart
 ```
-The overall accuracy of this model is `r cm_rpart$overall[1] * 100`%, which is really bad.
+The overall accuracy of this model is `r cm_rpart$overall[1] * 100`%, which is not too good.
 
-I obtained the best results with a random forest model, which is also mentioned frequently in the lectures as one of the best methods in Kaggle contests:
+## Random Forest
+I obtained the best results with a `rf` (random forest) model, which is also mentioned frequently in the lectures as one of the best methods in Kaggle contests:
 ```{r}
 
 ## Random forests
@@ -168,8 +183,9 @@ library(randomForest)
 #fit_rforest = randomForest(classe ~ ., data=training, method="class")
 # When using this train command from caret, it takes ages because of the default values of trControl and tuneLength
 #fit_rforest = train(classe ~ ., data=training, method="rf")
-# Faster version of the above command which is more or less equivalent to the first randomForest command; the do.trace flag results in verbose output
-fit_rforest = train(classe~., data=training, method="rf", trControl=trainControl(method="none",number=1,repeats=0), tuneLength=1, do.trace=T)
+# Faster version of the above command which is more or less equivalent to the first randomForest command; the do.trace flag results in verbose output (uncommented below)
+#fit_rforest = train(classe~., data=training, method="rf", trControl=trainControl(method="none",number=1,repeats=0), tuneLength=1, do.trace=T)
+fit_rforest = train(classe~., data=training, method="rf", trControl=trainControl(method="none",number=1,repeats=0), tuneLength=1)
 
 # Use model to predict classe for testing set
 #predict_rforest = predict(fit_rforest, newdata=testing, type="class")
@@ -179,10 +195,10 @@ predict_rforest = predict(fit_rforest, newdata=testing)
 cm_rforest = confusionMatrix(predict_rforest, testing$classe)
 cm_rforest
 ```
-This model gives an extremely good out-of-sample accuracy of `r cm_rforest$overall[1] * 100`%.
+This model gives an extremely good out-of-sample accuracy of `r cm_rforest$overall[1] * 100`%. Due to this result, I refrained from further refining the model and directly started with the predictions.
 
-## Predictions on unknown data
-Note that loading and preprocessing of the validation data has already been carried out simultaneously with the training/testing datasets. Predicting is straightforward:
+# Predictions on unknown data
+Note that loading and preprocessing of the validation data has already been carried out simultaneously with the training/testing datasets above. Predicting is straightforward:
 ```{r}
 predict_validation = predict(fit_rforest, newdata=validation)
 predict_validation
@@ -200,3 +216,11 @@ pml_write_files = function(x){
 
 pml_write_files(predict_validation)
 ```
+
+After submission, the predictions turned out to be 100% correct. Nice!
+
+# Summary
+Developing a prediction model based on the given data was quite demanding. The most time-consuming part was to the process of getting a clean dataset, which already eliminated a lot of undesired or uninformative features. But in the end, there were still more than 50 features remaining. For various reasons (most importantly time), I did not delve into exploratory analyses of all variables and chose to start with a very generic model (random forests) using all remaining variables. Since the out-of-sample accuracy was already over 99% with this method, I did not refine the model and used it to create the predictions, which luckily turned out to be 100% correct.
+
+
+
