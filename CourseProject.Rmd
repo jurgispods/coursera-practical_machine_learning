@@ -185,7 +185,7 @@ library(randomForest)
 #fit_rforest = train(classe ~ ., data=training, method="rf")
 # Faster version of the above command which is more or less equivalent to the first randomForest command; the do.trace flag results in verbose output (uncommented below)
 #fit_rforest = train(classe~., data=training, method="rf", trControl=trainControl(method="none",number=1,repeats=0), tuneLength=1, do.trace=T)
-fit_rforest = train(classe~., data=training, method="rf", trControl=trainControl(method="none",number=1,repeats=0), tuneLength=1)
+fit_rforest = train(classe~., data=training, method="rf", trControl=trainControl(method="cv",number=4,repeats=0), tuneLength=1)
 
 # Use model to predict classe for testing set
 #predict_rforest = predict(fit_rforest, newdata=testing, type="class")
@@ -196,6 +196,8 @@ cm_rforest = confusionMatrix(predict_rforest, testing$classe)
 cm_rforest
 ```
 This model gives an extremely good out-of-sample accuracy of `r cm_rforest$overall[1] * 100`%. Due to this result, I refrained from further refining the model and directly started with the predictions.
+
+It should be noted that with the default settings of the `train` function, cross validation is carried out automatically. For debug purposes (i.e. during the generation of this document), I switched off cross validation by handing over `trControl=trainControl(method="none",number=1,repeats=0)` as a argument to `train`, but the submitted results were generated using the cross-validated model. Interestingly, the results with or without cross-validation yield the same out-of-sample accuracy, which can be attributed to the random forest bootstrap sampling, which has similar effects as cross-validation.
 
 # Predictions on unknown data
 Note that loading and preprocessing of the validation data has already been carried out simultaneously with the training/testing datasets above. Predicting is straightforward:
