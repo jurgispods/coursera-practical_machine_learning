@@ -285,7 +285,7 @@ library(randomForest)</code></pre>
 #fit_rforest = train(classe ~ ., data=training, method=&quot;rf&quot;)
 # Faster version of the above command which is more or less equivalent to the first randomForest command; the do.trace flag results in verbose output (uncommented below)
 #fit_rforest = train(classe~., data=training, method=&quot;rf&quot;, trControl=trainControl(method=&quot;none&quot;,number=1,repeats=0), tuneLength=1, do.trace=T)
-fit_rforest = train(classe~., data=training, method=&quot;rf&quot;, trControl=trainControl(method=&quot;none&quot;,number=1,repeats=0), tuneLength=1)
+fit_rforest = train(classe~., data=training, method=&quot;rf&quot;, trControl=trainControl(method=&quot;cv&quot;,number=4,repeats=0), tuneLength=1)
 
 # Use model to predict classe for testing set
 #predict_rforest = predict(fit_rforest, newdata=testing, type=&quot;class&quot;)
@@ -298,34 +298,35 @@ cm_rforest</code></pre>
 ## 
 ##           Reference
 ## Prediction    A    B    C    D    E
-##          A 2230    9    0    0    0
-##          B    2 1506   11    0    0
-##          C    0    3 1355   12    3
-##          D    0    0    2 1274    3
+##          A 2231   10    0    0    0
+##          B    1 1505   10    0    0
+##          C    0    3 1355   13    3
+##          D    0    0    3 1273    3
 ##          E    0    0    0    0 1436
 ## 
 ## Overall Statistics
 ##                                           
-##                Accuracy : 0.9943          
-##                  95% CI : (0.9923, 0.9958)
+##                Accuracy : 0.9941          
+##                  95% CI : (0.9922, 0.9957)
 ##     No Information Rate : 0.2845          
 ##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16       
 ##                                           
-##                   Kappa : 0.9927          
+##                   Kappa : 0.9926          
 ##  Mcnemar's Test P-Value : NA              
 ## 
 ## Statistics by Class:
 ## 
 ##                      Class: A Class: B Class: C Class: D Class: E
-## Sensitivity            0.9991   0.9921   0.9905   0.9907   0.9958
-## Specificity            0.9984   0.9979   0.9972   0.9992   1.0000
-## Pos Pred Value         0.9960   0.9914   0.9869   0.9961   1.0000
-## Neg Pred Value         0.9996   0.9981   0.9980   0.9982   0.9991
+## Sensitivity            0.9996   0.9914   0.9905   0.9899   0.9958
+## Specificity            0.9982   0.9983   0.9971   0.9991   1.0000
+## Pos Pred Value         0.9955   0.9927   0.9862   0.9953   1.0000
+## Neg Pred Value         0.9998   0.9979   0.9980   0.9980   0.9991
 ## Prevalence             0.2845   0.1935   0.1744   0.1639   0.1838
-## Detection Rate         0.2842   0.1919   0.1727   0.1624   0.1830
-## Detection Prevalence   0.2854   0.1936   0.1750   0.1630   0.1830
-## Balanced Accuracy      0.9988   0.9950   0.9939   0.9950   0.9979</code></pre>
-<p>This model gives an extremely good out-of-sample accuracy of 99.4264593%. Due to this result, I refrained from further refining the model and directly started with the predictions.</p>
+## Detection Rate         0.2843   0.1918   0.1727   0.1622   0.1830
+## Detection Prevalence   0.2856   0.1932   0.1751   0.1630   0.1830
+## Balanced Accuracy      0.9989   0.9948   0.9938   0.9945   0.9979</code></pre>
+<p>This model gives an extremely good out-of-sample accuracy of 99.413714%. Due to this result, I refrained from further refining the model and directly started with the predictions.</p>
+<p>It should be noted that with the default settings of the <code>train</code> function, cross validation is carried out automatically. For debug purposes (i.e. during the generation of this document), I switched off cross validation by handing over <code>trControl=trainControl(method=&quot;none&quot;,number=1,repeats=0)</code> as a argument to <code>train</code>, but the submitted results were generated using the cross-validated model. Interestingly, the results with or without cross-validation yield the same out-of-sample accuracy, which can be attributed to the random forest bootstrap sampling, which has similar effects as cross-validation.</p>
 </div>
 </div>
 <div id="predictions-on-unknown-data" class="section level1">
